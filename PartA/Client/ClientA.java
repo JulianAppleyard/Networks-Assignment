@@ -18,11 +18,9 @@ import java.net.*;
 import java.util.Scanner;
 import java.lang.*;
 import static java.lang.Math.toIntExact;
-//import org.apache.commons.net.ftp.*; //Using Apache Commons Net API
 
 public class ClientA{
 
-//  private static FTPClient ftp;
   private static Socket socket;
   private static OutputStream outToServer;
 
@@ -42,87 +40,110 @@ public class ClientA{
 /* Method for uploading a File to the Server
 
 */
-///*
   public static void uploadToServer(String filePath){
 
     try{
       Path p = Paths.get(filePath);
 
       File fileToBeUploaded = p.toFile();
-      String file_name = p.getFileName().toString(); //throws FileNotFoundException
-      System.out.println("DEBUG FILENAME: " +file_name);
-      int fileNameLength = file_name.length();
-      short fileNameShortLength = (short) fileNameLength;
-      //There is a max length that this will work for do I need to account for this?
-
-      System.out.println("File namelength is: " + fileNameLength); //debug
-      System.out.println("Length in Short is: " + fileNameShortLength); //debug
-      // Outline wants the length of the file name to be sent in short int
-      //short shortNameLength = fileNameLength;
-      //send name and length of name (in short)
+      boolean exists = fileToBeUploaded.exists();
+      if(!exists){
+        DataOutputStream boolOut = new DataOutputStream(outToServer);
 
 
+        System.out.println("File does not exist");
+      }else{
+        String file_name = p.getFileName().toString(); //throws FileNotFoundException
+        System.out.println("DEBUG FILENAME: " +file_name);
+        int fileNameLength = file_name.length();
+        short fileNameShortLength = (short) fileNameLength;
+        //There is a max length that this will work for do I need to account for this?
 
-      DataOutputStream dataOut = new DataOutputStream(outToServer);
-
-
-      //need to send length and name in one go
-      // convert to byte array with first two values being the length in short
-      ByteBuffer bb = ByteBuffer.allocate(2);
-      bb.putShort(fileNameShortLength);
-      byte[] lengthArray = bb.array();
-      //encode the file name in second byte array using UTF-8
-      byte[] nameArray = file_name.getBytes("UTF-8");
-      System.out.println(lengthArray.length);//debug
-      System.out.println(nameArray.length);//debug
-
-      //concatenate the two arrays
-      ByteArrayOutputStream baos = new ByteArrayOutputStream();
-      baos.write(lengthArray);
-      baos.write(nameArray);
-      byte[] outArray = baos.toByteArray();
-
-      System.out.println("Sending byteArray...");//DEbug
-
-      //send the concatenated byte array to the server
-      dataOut.write(outArray, 0, outArray.length);
+        //System.out.println("File namelength is: " + fileNameLength); //debug
+        //System.out.println("Length in Short is: " + fileNameShortLength); //debug
+        // Outline wants the length of the file name to be sent in short int
+        //short shortNameLength = fileNameLength;
+        //send name and length of name (in short)
 
 
 
-      //Now wait for ack from server that it received the file name and name length
-      InputStream iStream = socket.getInputStream();
-      InputStreamReader isr = new InputStreamReader(iStream);
-      BufferedReader br = new BufferedReader(isr);
-      System.out.println("reading ack");
-      String response = br.readLine();
-
-      System.out.println("ack was: " + response);
+        DataOutputStream dataOut = new DataOutputStream(outToServer);
 
 
-      System.out.println("ack received from server");//debug
+        //need to send length and name in one go
+        // convert to byte array with first two values being the length in short
+        ByteBuffer bb = ByteBuffer.allocate(2);
+        bb.putShort(fileNameShortLength);
+        byte[] lengthArray = bb.array();
+        //encode the file name in second byte array using UTF-8
+        byte[] nameArray = file_name.getBytes("UTF-8");
+        //System.out.println(lengthArray.length);//debug
+        //System.out.println(nameArray.length);//debug
+
+        //concatenate the two arrays
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        baos.write(lengthArray);
+        baos.write(nameArray);
+        byte[] outArray = baos.toByteArray();
+
+        System.out.println("Sending byteArray...");//DEbug
+
+        //send the concatenated byte array to the server
+        dataOut.write(outArray, 0, outArray.length);
 
 
-      //Client sends the size of the file, which maay be a 32 bit value sent in bytes
-      long longFileSize = fileToBeUploaded.length();
-      int intFileSize = toIntExact(longFileSize); //Will throw an ArithmeticException in case of overflow
-      System.out.println("Int filesize: "+ intFileSize);
-      ByteBuffer sizeBuff = ByteBuffer.allocate(4);
-      sizeBuff.putInt(intFileSize);
-      byte[] sizeArray = sizeBuff.array();
 
-      dataOut.write(sizeArray, 0, sizeArray.length);
+        //Now wait for ack from server that it received the file name and name length
+        InputStream iStream = socket.getInputStream();
+        InputStreamReader isr = new InputStreamReader(iStream);
+        BufferedReader br = new BufferedReader(isr);
+        String response = br.readLine();
 
-      //send file
-      //convert file into byte array
-      FileInputStream fileStream = new FileInputStream(fileToBeUploaded);
-      byte[] fileBytes = new byte[intFileSize];
-      fileStream.read(fileBytes);
+        //System.out.println("ack was: " + response);//debug
+        //System.out.println("ack received from server");//debug
 
-      //FileInputStream reads files as bytes and DataOutputStream writes bytes to server
-      dataOut.write(fileBytes, 0, fileBytes.length);
+        //Client sends the size of the file, which maay be a 32 bit value sent in bytes
+        long longFileSize = fileToBeUploaded.length();
+        int intFileSize = toIntExact(longFileSize); //Will throw an ArithmeticException in case of overflow
+        System.out.println("Int filesize: "+ intFileSize);
+        ByteBuffer sizeBuff = ByteBuffer.allocate(4);
+        sizeBuff.putInt(intFileSize);
+        byte[] sizeArray = sizeBuff.array();
 
-      String progress = br.readLine();
-      System.out.println(progress);
+        dataOut.write(sizeArray, 0, sizeArray.length);
+
+        //send file
+        //convert file into byte array
+        FileInputStream fileStream = new FileInputStream(fileToBeUploaded);
+
+        int numOfIterations = (intFileSize/1024)+1;
+        System.out.println("Number of iterations: " + numOfIterations);
+
+
+        //FileInputStream reads files as bytes and DataOutputStream writes bytes to server
+
+        // the below for loop will iterate once for every kB
+        // one extra in case filesize is less than 1024 (in which case int division will give 0)
+        // the extra one also covers remaining bytes left over because of integer division
+        for(int i=0; i<numOfIterations; i++){
+          int remaining = fileStream.available();
+          System.out.println(remaining + " bytes remaining");
+          if(remaining >= 1024){
+            byte[] fileBytes = new byte[1024];
+            fileStream.read(fileBytes, 0, 1024);
+            dataOut.write(fileBytes, 0, 1024);
+            System.out.println("Iteration completed: " + i);//debug
+          }
+          //if there is less than 1024 bytes left, make the bytearray that size instead of 1024
+          else{
+            byte[] fileBytes = new byte[remaining];
+            fileStream.read(fileBytes, 0, remaining);
+            dataOut.write(fileBytes, 0, remaining);
+          }
+        }
+      }
+      //String progress = br.readLine();
+      //System.out.println(progress);
 
     }catch(NullPointerException e){
       e.printStackTrace();

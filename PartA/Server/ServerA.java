@@ -29,71 +29,93 @@ This doesnt work with larger files for some reason?
   public static void uploadFromClient(){
     try{
         DataInputStream dataIn = new DataInputStream(is);
+        boolean exists = false;
+
+        if(!exists){
+          System.out.println("File does not exist. Returning to main menu...");
+        }else{
+
+          byte[] inArray = new byte[50];
+          //byte array has an arbitrary limited length
+          //is this bad practice?
+          dataIn.read(inArray);
+
+          System.out.println("Recieving file name...");//debug
+
+          //Client sends the length of the file name which will be sent (short int) and the file_name itself
+          // These will be sent encoded in a byte Array
+          // the first two values are the length of the name in type short
+          // the remaining will be the file_name itself encoded as UTF-8
+
+          ByteBuffer buffer = ByteBuffer.wrap(inArray);
+
+          short lengthShort = buffer.getShort(0);
+          System.out.println("DEBUG length: "+ lengthShort); //debug
+
+          //System.out.println(buffer.toString());//debug
+          byte[] temp = new byte[buffer.remaining()];
+          buffer.get(temp);
+
+          String file_name = new String(temp,"UTF-8");
+          file_name = file_name.trim();
+          System.out.println("DEBUG string: "+ file_name);//debug
+
+          //send acknowledgement that the server is ready to receive
+          OutputStream oStream = socket.getOutputStream();
+          OutputStreamWriter osr = new OutputStreamWriter(oStream);
+          BufferedWriter bw = new BufferedWriter(osr);
+
+          String message = "Send file size" + "\n";
+          System.out.println("Sending ack");//debug
+          bw.write(message, 0, message.length());
+          bw.flush();
+          System.out.println("Ack sent"); //debug
+
+          //Server receives and decodes file filesize
+
+          byte[] sizeArray = new byte[5];
+          dataIn.read(sizeArray);
+          ByteBuffer sizeBuff = ByteBuffer.wrap(sizeArray);
+          int fileSize = sizeBuff.getInt(0); //what do I do with this?
 
 
-        byte[] inArray = new byte[50];
-        //byte array has an arbitrary limited length
-        //is this bad practice?
-        dataIn.read(inArray);
+          //ok so if the file is too big it will fuck everything up
+          System.out.println("filesize: " + fileSize);//debug
 
-        System.out.println("Recieving file name...");//debug
+          Path currentRelativePath = Paths.get("");
+          String stringPath = currentRelativePath.toAbsolutePath().toString();
+          File newFile = new File(stringPath + "\\Storage\\" + file_name);
+          //what if the file name already exists? make a copy?
+          System.out.println(newFile.getPath());//debug
+          newFile.createNewFile();
 
-        //Client sends the length of the file name which will be sent (short int) and the file_name itself
-        // These will be sent encoded in a byte Array
-        // the first two values are the length of the name in type short
-        // the remaining will be the file_name itself encoded as UTF-8
+          FileOutputStream fileOutputWriter = new FileOutputStream(newFile);
 
-        ByteBuffer buffer = ByteBuffer.wrap(inArray);
+          int numOfIterations = (fileSize/1024)+1;
+          System.out.println("Number of iterations: " + numOfIterations);//debug
+          // the below for loop will iterate once for every kB
+          // one extra in case filesize is less than 1024 (in which case int division will give 0)
+          // the extra one also covers remaining bytes left over because of integer division
 
-        short lengthShort = buffer.getShort(0);
-        System.out.println("DEBUG length: "+ lengthShort); //debug
+          //problem!
+          // this will write empty bytes
+          for(int i=0; i<numOfIterations; i++){
+            if(i == numOfIterations-1){
+              int remaining = fileSize%1024;
+              byte[] fileBytes = new byte[remaining];
+              dataIn.read(fileBytes, 0, remaining);
+              fileOutputWriter.write(fileBytes, 0, remaining);
+            }else{
+              byte[] fileBytes = new byte[1024];
+              dataIn.read(fileBytes, 0, 1024);
+              fileOutputWriter.write(fileBytes, 0, 1024);
+              System.out.println("Iteration completed: " + i); //debug
+            }
+          }
 
-        //System.out.println(buffer.toString());//debug
-        byte[] temp = new byte[buffer.remaining()];
-        buffer.get(temp);
-
-        String file_name = new String(temp,"UTF-8");
-        file_name = file_name.trim();
-        System.out.println("DEBUG string: "+ file_name);//debug
-
-        //send acknowledgement that the server is ready to receive
-        OutputStream oStream = socket.getOutputStream();
-        OutputStreamWriter osr = new OutputStreamWriter(oStream);
-        BufferedWriter bw = new BufferedWriter(osr);
-
-        String message = "Send file size" + "\n";
-        System.out.println("Sending ack");//debug
-        bw.write(message, 0, message.length());
-        bw.flush();
-        System.out.println("Ack sent"); //debug
-
-        //Server receives and decodes file filesize
-
-        byte[] sizeArray = new byte[5];
-        dataIn.read(sizeArray);
-        ByteBuffer sizeBuff = ByteBuffer.wrap(sizeArray);
-        int fileSize = sizeBuff.getInt(0); //what do I do with this?
-
-
-        //ok so if the file is too big it will fuck everything up
-        System.out.println("filesize: " + fileSize);//debug
-
-        Path currentRelativePath = Paths.get("");
-        String stringPath = currentRelativePath.toAbsolutePath().toString();
-        File newFile = new File(stringPath + "\\Storage\\" + file_name);
-        //what if the file name already exists? make a copy?
-        System.out.println(newFile.getPath());//debug
-        newFile.createNewFile();
-
-        FileOutputStream fileOutputWriter = new FileOutputStream(newFile);
-        byte[] fileBytes = new byte[fileSize];
-        dataIn.read(fileBytes, 0, fileSize);
-
-        fileOutputWriter.write(fileBytes);
-        System.out.println("File written");
-        bw.write(fileBytes.length + " bytes written" + "\n");
-        bw.flush();
-
+          System.out.println("File written");
+          bw.flush();
+        }
     }catch(IOException e){
       e.printStackTrace();
     }
