@@ -2,10 +2,9 @@
 * The server-side code of a simple FTP application. The file transfer itself
 * should take place using TCP with the client.
 * Author: Julian Appleyard
-* Version: 0.5
+* Version: 0.9
 * see ClientA for version notes
 
-Should "invalid command" responses be handled Server-side or client-side?
 
 **/
 
@@ -14,6 +13,7 @@ import java.io.*;
 import java.nio.file.*;
 import java.net.*;
 import java.nio.ByteBuffer;
+import static java.lang.Math.toIntExact;
 
 public class ServerA {
   private static Socket socket;
@@ -22,17 +22,25 @@ public class ServerA {
 This method handles the UPLD function.
 The client sends the operation "UPLD" to upload a local file to the server.
 current this will overwrite files if they have the same name
-This doesnt work with larger files for some reason?
-
 */
 
   public static void uploadFromClient(){
     try{
+      //client checks if the file exists on the clientside
+
         DataInputStream dataIn = new DataInputStream(is);
         boolean exists = false;
+        byte[] confirmArray = new byte[4];
+        dataIn.read(confirmArray);
+        ByteBuffer confirmBuffer = ByteBuffer.wrap(confirmArray);
+        int confirm = confirmBuffer.getInt();
+
+        if(confirm==1){
+          exists=true;
+        }
 
         if(!exists){
-          System.out.println("File does not exist. Returning to main menu...");
+          System.out.println("Client file does not exist. Returning to main menu...");
         }else{
 
           byte[] inArray = new byte[50];
@@ -40,7 +48,7 @@ This doesnt work with larger files for some reason?
           //is this bad practice?
           dataIn.read(inArray);
 
-          System.out.println("Recieving file name...");//debug
+          //System.out.println("Recieving file name...");//debug
 
           //Client sends the length of the file name which will be sent (short int) and the file_name itself
           // These will be sent encoded in a byte Array
@@ -50,7 +58,7 @@ This doesnt work with larger files for some reason?
           ByteBuffer buffer = ByteBuffer.wrap(inArray);
 
           short lengthShort = buffer.getShort(0);
-          System.out.println("DEBUG length: "+ lengthShort); //debug
+          //System.out.println("DEBUG length: "+ lengthShort); //debug
 
           //System.out.println(buffer.toString());//debug
           byte[] temp = new byte[buffer.remaining()];
@@ -58,7 +66,7 @@ This doesnt work with larger files for some reason?
 
           String file_name = new String(temp,"UTF-8");
           file_name = file_name.trim();
-          System.out.println("DEBUG string: "+ file_name);//debug
+        //  System.out.println("dEBUG string: "+ file_name);//debug
 
           //send acknowledgement that the server is ready to receive
           OutputStream oStream = socket.getOutputStream();
@@ -66,10 +74,10 @@ This doesnt work with larger files for some reason?
           BufferedWriter bw = new BufferedWriter(osr);
 
           String message = "Send file size" + "\n";
-          System.out.println("Sending ack");//debug
+          //System.out.println("Sending ack");//debug
           bw.write(message, 0, message.length());
           bw.flush();
-          System.out.println("Ack sent"); //debug
+        //  System.out.println("Ack sent"); //debug
 
           //Server receives and decodes file filesize
 
@@ -85,20 +93,43 @@ This doesnt work with larger files for some reason?
           Path currentRelativePath = Paths.get("");
           String stringPath = currentRelativePath.toAbsolutePath().toString();
           File newFile = new File(stringPath + "\\Storage\\" + file_name);
-          //what if the file name already exists? make a copy?
+
+
+          //this regex should find the last period (.) in the filename. Should be the one right before the extension
+          String regex = "\\.(?=[^\\.]*$)";
+
+          int j=1;
+          while(true){
+            //If the filename already exists on the server, rename the file to include (1)
+            // eg SmallFile.txt becomes SmallFile(1).txt
+            //This will keep looping until it finds a filename which does not exist in the server's storage
+            //
+            if(newFile.exists()){
+              //The regex splits around the last period (.) found in the file name
+              String[] nameArray = file_name.split(regex);
+              System.out.println(stringPath + "\\Storage\\" + nameArray[0]+"("+j+")"+"."+nameArray[1]);//debug
+              newFile = new File(stringPath + "\\Storage\\" + nameArray[0]+"("+j+")"+"."+nameArray[1]);
+            }
+            else{
+              break;
+            }
+            j++;
+          }
           System.out.println(newFile.getPath());//debug
           newFile.createNewFile();
 
           FileOutputStream fileOutputWriter = new FileOutputStream(newFile);
 
           int numOfIterations = (fileSize/1024)+1;
-          System.out.println("Number of iterations: " + numOfIterations);//debug
-          // the below for loop will iterate once for every kB
-          // one extra in case filesize is less than 1024 (in which case int division will give 0)
-          // the extra one also covers remaining bytes left over because of integer division
+        //  System.out.println("Number of iterations: " + numOfIterations);//debug
 
-          //problem!
-          // this will write empty bytes
+
+          /*
+          The below for loop will iterate once for every kB
+          There is one extra in case filesize is less than 1024 (in which case int division will give 0)
+          The extra one also covers remaining bytes left over because of integer division
+          */
+
           for(int i=0; i<numOfIterations; i++){
             if(i == numOfIterations-1){
               int remaining = fileSize%1024;
@@ -109,7 +140,7 @@ This doesnt work with larger files for some reason?
               byte[] fileBytes = new byte[1024];
               dataIn.read(fileBytes, 0, 1024);
               fileOutputWriter.write(fileBytes, 0, 1024);
-              System.out.println("Iteration completed: " + i); //debug
+              //System.out.println("Iteration completed: " + i); //debug
             }
           }
 
@@ -167,7 +198,7 @@ What exceptions are thrown?
       byte[] listingArray = baos.toByteArray();
 
 
-      System.out.println("DEBUG size of directory listing: " + size);
+    //  System.out.println("debug size of directory listing: " + size);
 
       //convert size of listing (32 bit int) to byte array for sending to client
 
@@ -175,10 +206,10 @@ What exceptions are thrown?
       listBuffer.putInt(size);
       byte[] lengthArray = listBuffer.array();
 
-      System.out.println("Sending lengthArray...");//debug
+      //System.out.println("Sending lengthArray...");//debug
       listDataOut.write(lengthArray, 0, lengthArray.length);
 
-      System.out.println("Sending listingArray...");//debug
+      //System.out.println("Sending listingArray...");//debug
       listDataOut.write(listingArray, 0, listingArray.length);
 
     }catch(Exception e){
@@ -191,16 +222,106 @@ This method handles the DWNLD function.
 The client requests a file and the server sends the file to the client
 just an outline for now
 */
-/*
+
   public static void downloadToClient(){
     try{
+      OutputStream os = socket.getOutputStream();
+      DataOutputStream dataOut = new DataOutputStream(os);
+      DataInputStream dataIn = new DataInputStream(is);
+      byte[] inArray = new byte[50];
 
-    }Catch(){
+      //Client sends the length of the file name (short int) and the filename (String)
+      dataIn.read(inArray);
+
+      ByteBuffer inBuffer = ByteBuffer.wrap(inArray);
+
+      /*
+        Server decodes file name size and file name
+      */
+
+      //the first two bytes are the file name length in short
+      //
+      short lengthShort = inBuffer.getShort(0);
+
+      //The remaining bytes are the file name String
+      //
+      byte[] nameBytes = new byte[inBuffer.remaining()];
+      inBuffer.get(nameBytes);
+
+      String file_name = new String (nameBytes, "UTF-8");
+      file_name = file_name.trim();
+
+      //Arrange the path to the file
+      //the file is in the \Storage\ directory
+      //
+      Path currentRelativePath = Paths.get("");
+      String stringPath = currentRelativePath.toAbsolutePath().toString();
+      stringPath = stringPath + "\\Storage\\" + file_name;
+
+      File f = new File(stringPath);
+
+      //check if file exists at that location
+      Boolean fileExists = f.exists();
+      //if the file is a directory, treat it as if it doesn't exist (abort the download process)
+      if(f.isDirectory()){
+        fileExists = false;
+      }
+
+      if(fileExists){
+        //if the file does exist, server returns the size of the file to the client as a 32-bit int
+        long fileSizeLong = f.length();
+        int fileSizeInt = toIntExact(fileSizeLong);
+
+        ByteBuffer outBuffer = ByteBuffer.allocate(4);
+        outBuffer.putInt(fileSizeInt);
+        byte[] outArray = outBuffer.array();
+        dataOut.write(outArray, 0, outArray.length);
+
+        // now the server sends the file to the client
+        FileInputStream fileStream = new FileInputStream(f);
+
+
+        //FileInputStream reads files as bytes and DataOutputStream writes bytes to client stream
+
+        /*
+        The below for loop will iterate once for every kB
+        with one extra in case filesize is less than 1024 bytes (in which case int division will give 0)
+        The extra one also covers remaining bytes left over because of integer division.
+        */
+
+        int numOfIterations = (fileSizeInt/1024)+1;
+        System.out.println("Transferring...");//debug
+
+        for(int i=0; i<numOfIterations; i++){
+          int remaining = fileStream.available();
+
+          if(remaining >= 1024){
+            byte[] fileBytes = new byte[1024];
+            fileStream.read(fileBytes, 0, 1024);
+            dataOut.write(fileBytes, 0, 1024);
+          }
+          //if there is less than 1024 bytes left, make the byte array that size instead of 1024
+          else{
+            byte[] fileBytes = new byte[remaining];
+            fileStream.read(fileBytes, 0, remaining);
+            dataOut.write(fileBytes, 0, remaining);
+          }
+        }
+
+      }else{
+        // if the file does not exist, the server returns 32 bit int value -1
+        int confirm = -1;
+        ByteBuffer outBuffer = ByteBuffer.allocate(4);
+        outBuffer.putInt(confirm);
+        byte[] outArray = outBuffer.array();
+        dataOut.write(outArray, 0, outArray.length);
+      }
+    }catch(IOException e){
 
     }
   }
 
-  */
+
 
 /*
 This method handles the DELF function
@@ -227,7 +348,7 @@ just an outline for now
       //The first two bytes are the file name length in short
       //
       short lengthShort = inBuffer.getShort(0);
-      System.out.println("Debug length: " + lengthShort);
+      //System.out.println("Debug length: " + lengthShort);
 
       //The remaining bytes are the file name String
       //
@@ -236,15 +357,15 @@ just an outline for now
 
       String file_name = new String(nameBytes, "UTF-8");
       file_name = file_name.trim();
-      System.out.println("Debug file to be deleted: " + file_name);
+      //System.out.println("Debug file to be deleted: " + file_name);
 
       Path currentRelativePath = Paths.get("");
       String stringPath = currentRelativePath.toAbsolutePath().toString();
       stringPath = stringPath + "\\Storage\\" + file_name;
 
       File f = new File(stringPath);
-      System.out.println(stringPath);
-      System.out.println(f.exists());//debug
+    //  System.out.println(stringPath);
+    //  System.out.println(f.exists());//debug
 
       Boolean fileExists = f.exists();
 
@@ -346,7 +467,7 @@ just an outline for now
 
             case "DWLD":
               //calling DOWNLOAD method
-
+              downloadToClient();
               break;
 
             case "DELF":

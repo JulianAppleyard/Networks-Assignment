@@ -1,10 +1,12 @@
 /**
 * The client-side code of a simple FTP application.
 * Author: Julian Appleyard
-* Version: 0.5
+* Version: 0.9
 Version notes:
-* CONN LIST DELF QUIT are all working as expected (so far)
-* UPLD behaves improperly when using a file larger than a text file
+* All functions operating.
+* Comments could use cleaning up.
+* Remove debug statements
+* doublecheck requirements
 *
 * Planned structure is that each command will call a method that mirrors a method executed on the server.
 * The server and client methods will be structured in way that they wait for each other's responses at the appropriate time
@@ -46,15 +48,29 @@ public class ClientA{
       Path p = Paths.get(filePath);
 
       File fileToBeUploaded = p.toFile();
+      //the file must exist on the clientside
       boolean exists = fileToBeUploaded.exists();
-      if(!exists){
-        DataOutputStream boolOut = new DataOutputStream(outToServer);
+      // the file must also not be a directory
+      if(fileToBeUploaded.isDirectory()){
+        exists = false;
+      }
+      int confirm = 0;
 
+      if(!exists){
+        //if the file does not exist or is a directory, tell the server to abort the upload process
+        confirm = -1;
+        DataOutputStream existOut = new DataOutputStream(outToServer);
+        ByteBuffer existBuffer = ByteBuffer.allocate(4);
+        existBuffer.putInt(confirm);
+        byte[] existArray = existBuffer.array();
+        existOut.write(existArray, 0, existArray.length);
 
         System.out.println("File does not exist");
+
       }else{
+        confirm =1;
         String file_name = p.getFileName().toString(); //throws FileNotFoundException
-        System.out.println("DEBUG FILENAME: " +file_name);
+      //  System.out.println("DEBUG FILENAME: " +file_name);
         int fileNameLength = file_name.length();
         short fileNameShortLength = (short) fileNameLength;
         //There is a max length that this will work for do I need to account for this?
@@ -66,8 +82,13 @@ public class ClientA{
         //send name and length of name (in short)
 
 
-
+        //the file exists on the client, so tell the server to proceed with the upload process
         DataOutputStream dataOut = new DataOutputStream(outToServer);
+        ByteBuffer existBuffer = ByteBuffer.allocate(4);
+        existBuffer.putInt(confirm);
+        byte[] existOut = existBuffer.array();
+        dataOut.write(existOut, 0, existOut.length);
+
 
 
         //need to send length and name in one go
@@ -86,7 +107,7 @@ public class ClientA{
         baos.write(nameArray);
         byte[] outArray = baos.toByteArray();
 
-        System.out.println("Sending byteArray...");//DEbug
+      //  System.out.println("Sending byteArray...");//DEbug
 
         //send the concatenated byte array to the server
         dataOut.write(outArray, 0, outArray.length);
@@ -117,22 +138,23 @@ public class ClientA{
         FileInputStream fileStream = new FileInputStream(fileToBeUploaded);
 
         int numOfIterations = (intFileSize/1024)+1;
-        System.out.println("Number of iterations: " + numOfIterations);
+        //System.out.println("Number of iterations: " + numOfIterations);
 
-
+        double startTime = System.currentTimeMillis();
         //FileInputStream reads files as bytes and DataOutputStream writes bytes to server
 
         // the below for loop will iterate once for every kB
         // one extra in case filesize is less than 1024 (in which case int division will give 0)
         // the extra one also covers remaining bytes left over because of integer division
+        System.out.println("Transferring...");
         for(int i=0; i<numOfIterations; i++){
           int remaining = fileStream.available();
-          System.out.println(remaining + " bytes remaining");
+          //System.out.println(remaining + " bytes remaining");//debug
           if(remaining >= 1024){
             byte[] fileBytes = new byte[1024];
             fileStream.read(fileBytes, 0, 1024);
             dataOut.write(fileBytes, 0, 1024);
-            System.out.println("Iteration completed: " + i);//debug
+            //System.out.println("Iteration completed: " + i);//debug
           }
           //if there is less than 1024 bytes left, make the bytearray that size instead of 1024
           else{
@@ -140,10 +162,14 @@ public class ClientA{
             fileStream.read(fileBytes, 0, remaining);
             dataOut.write(fileBytes, 0, remaining);
           }
+
         }
+
+        double transferTime = System.currentTimeMillis() - startTime;
+        double seconds = transferTime /1000.00;
+        System.out.println(intFileSize + " bytes transfered in " + seconds + " seconds");
       }
-      //String progress = br.readLine();
-      //System.out.println(progress);
+
 
     }catch(NullPointerException e){
       e.printStackTrace();
@@ -160,13 +186,120 @@ public class ClientA{
   }
 
 //  */
-  /*
-  public static void downloadFromServer(){
-    //send length of file name in short int followed by file file_name
 
-    //
+  public static void downloadFromServer(String file_name){
+    try{
+      InputStream is = socket.getInputStream();
+      DataInputStream dataIn = new DataInputStream(is);
+      DataOutputStream dataOut = new DataOutputStream(outToServer);
+      int nameLengthInt = file_name.length();
+      short nameLengthShort = (short) nameLengthInt;
+
+      //send length of file name in short int followed by file file_name
+      ByteBuffer bb = ByteBuffer.allocate(2);
+      bb.putShort(nameLengthShort);
+
+      //Convert the two values into byte arrays
+      byte[] lengthArray =  bb.array();
+      byte[] nameArray = file_name.getBytes("UTF-8");
+
+      //concatenate the two byte arrays
+      ByteArrayOutputStream baos = new ByteArrayOutputStream();
+      baos.write(lengthArray);
+      baos.write(nameArray);
+      byte[] outArray = baos.toByteArray();
+
+      //send the concatenated byte array to the server
+      dataOut.write(outArray, 0, outArray.length);
+
+      //wait for integer confirmation code and then decode it
+      byte[] confirmBytes = new byte[4];  //int takes up 1-4 bytes
+      dataIn.read(confirmBytes);
+      ByteBuffer inBuffer = ByteBuffer.wrap(confirmBytes);
+      int confirm = inBuffer.getInt();
+
+      //Integer confirm code will be the filesize as 32-bit int if the file exists
+      //if it doesnt exist, server will respond with -1 (32-bit int)
+      if(confirm != -1){
+
+        int fileSize = confirm;
+
+        Path currentRelativePath = Paths.get("");
+        String stringPath = currentRelativePath.toAbsolutePath().toString();
+        File newFile = new File(stringPath + "\\Storage\\" + file_name);
+
+        //this regex should find the last period (.) in the filename. This will be the one right before the extension
+        //
+        String regex = "\\.(?=[^\\.]*$)";
+
+        /*
+        If the filename already exists on the client, rename the file to include (1) before the file extension
+        eg: SmallFile.txt becomes SmallFile(1).txt
+        The following while loop will continue to loop until it finds a filename which doesn't exist in the client's storage
+        */
+        int j=1;
+        while(true){
+          if(newFile.exists()){
+            //The regex splits around the last period (.) found in the file name
+            String[] stringArray = file_name.split(regex);
+            newFile = new File(stringPath + "\\Storage\\" + stringArray[0] + "(" + j + ")" + "." + stringArray[1]);
+          }else{
+            //once it finds a name that makes newFile.exist() return false, it breaks out of the loop
+            break;
+          }
+          j++;
+        }
+        newFile.createNewFile();
+
+
+        //Server now sends the file to the client
+        FileOutputStream fileOutputWriter = new FileOutputStream(newFile);
+        //Client reads "file size" bytes from server
+        double startTime = System.currentTimeMillis();
+        System.out.println("Transferring...");
+
+        //the client saves the file to disk as "file name"
+        /*
+        The below for loop will iterate once for every kB
+        with one extra in case filesize is less than 1024 bytes (in which case int division will give 0)
+        The extra one also covers remaining bytes left over because of integer division
+        It reads the file 1024 bytes at a time and writes that same amount immediately
+        */
+        int numOfIterations = (fileSize/1024)+1;
+
+        for(int i =0; i<numOfIterations; i++){
+          //on the last iteration, the remaining bytes will be less than 10244, so create a byte array with that size instead of 1024
+          if(i== numOfIterations-1){
+            int remaining = fileSize%1024;
+            byte[] fileBytes = new byte[remaining];
+            dataIn.read(fileBytes, 0, remaining);
+            fileOutputWriter.write(fileBytes, 0, remaining);
+          }else{
+            byte[] fileBytes = new byte[1024];
+            dataIn.read(fileBytes, 0, 1024);
+            fileOutputWriter.write(fileBytes, 0, 1024);
+          }
+        }
+        //calculate transfer
+        double transferTime = System.currentTimeMillis() - startTime;
+        double seconds = transferTime /1000.00;
+        System.out.println(fileSize + " bytes transferred in " + seconds + " seconds");
+
+        //Inform user that the transfer was successful and return to "prompt user for operation state"
+
+        System.out.println("File transfer successful");
+
+      }
+      else{
+        System.out.println("File does not exist on server.");
+        //returns to "promp user for operation" state
+      }
+
+  }catch(IOException e){
+    e.printStackTrace();
   }
-  */
+  }
+
 
   public static void listFilesOnServer(){
     try{
@@ -180,11 +313,11 @@ public class ClientA{
       ByteBuffer sizeBuff = ByteBuffer.wrap(sizeArray);
       int size = sizeBuff.getInt(0);
 
-      System.out.println("DEBUG size of directory listing: " + size); //debug
+      //System.out.println("DEBUG size of directory listing: " + size); //debug
 
       //Client receives the size and goes into a loop to read directory listing
       //
-      System.out.println("DEBUG waiting for directory listing itself...");//debug
+      //System.out.println("debug waiting for directory listing itself...");//debug
       byte[] listingArray = new byte[size*4]; //individual characters are encoded with 1 to 4 bytes in UTF-8
       dataIn.read(listingArray);
 
@@ -236,7 +369,7 @@ public class ClientA{
       baos.write(nameArray);
       byte[] outArray = baos.toByteArray();
 
-      System.out.println("Sending byteArray...");//debug
+    //  System.out.println("Sending byteArray...");//debug
 
       //send the concatenated byte array to the server
       dataOut.write(outArray, 0, outArray.length);
@@ -331,6 +464,7 @@ public class ClientA{
             System.out.println("LIST : to list the directories/files at the server");
             System.out.println("DWLD : to download a file from the server");
             System.out.println("DELF : to delete a file from the server \n");
+            System.out.println("QUIT : to terminate the connection and exit the client");
             break;
 
           case "UPLD":
@@ -350,16 +484,20 @@ public class ClientA{
 
           case "DWLD":
             System.out.println("Beginning procedure for downloading a file from the server...");
+            System.out.println("Enter the name of the file on the server that you want to download");
+            String filename = keyboard.nextLine();
+
             //call method to download a file from the server
+            downloadFromServer(filename);
             break;
 
           case "DELF":
             System.out.println("Beginning procedure for deleting a file from the server...");
             System.out.println("Enter the name of the file on the server that you want to delete");
 
-            String filename = keyboard.nextLine();
+            String file_name = keyboard.nextLine();
 
-            deleteFileOnServer(filename);
+            deleteFileOnServer(file_name);
             //call delete files method
             break;
 
