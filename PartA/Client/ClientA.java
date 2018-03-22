@@ -82,7 +82,7 @@ public class ClientA{
         Scanner keyboard = new Scanner(System.in);
 
 
-        System.out.println("Enter message to send to " + host);
+        System.out.println("Enter a command);
         String textToServer = keyboard.nextLine();
 
         //user input is case sensitive
@@ -437,6 +437,14 @@ Method for uploading a File to the Server
     e.printStackTrace();
   }
   }
+
+
+/*
+            *LIST*
+
+
+*/
+
 
 
   public static void listFilesOnServer(){
