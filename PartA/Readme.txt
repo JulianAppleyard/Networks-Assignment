@@ -9,7 +9,7 @@ java ClientA
 in a bash command line (in the "Client" directory)
 
 The client will automatically connect to the server and will then prompt you to send a message to the server.
-The client will accept the following commands (CASE SENSATIVE)
+The client will accept the following commands (CASE SENSITIVE)
 
 HELP (list valid commands)
 

@@ -8,6 +8,7 @@ Version notes:
 * Remove debug statements
 * doublecheck requirements
 *
+*
 * Planned structure is that each command will call a method that mirrors a method executed on the server.
 * The server and client methods will be structured in way that they wait for each other's responses at the appropriate time
 * so that they do not become out of sync.
@@ -27,19 +28,155 @@ public class ClientA{
   private static OutputStream outToServer;
 
 
-  public ClientA(String host, int port){
+  public ClientA(String host, int port) throws UnknownHostException, IOException{
 
-    try{
-      System.out.println("Connecting to " + host + " on port " + port + "..."); //debug
-      socket = new Socket(host, port);
+    System.out.println("Connecting to " + host + " on port " + port + "..."); //debug
+    socket = new Socket(host, port);
 
-      System.out.println("Connected"); //debug
-    } catch(Exception e){
-      e.printStackTrace();
-    }
+    System.out.println("Connected"); //debug
   }
 
-/* Method for uploading a File to the Server
+
+/*
+              *MAIN METHOD*
+  This main method first calls the construcutor for a new ClientA object. The constructor takes the host and port number
+  and immediately atttempts to connect to the server.
+  If connection fails, the constructor throws an exception and the client exits on the assumption that the server is not running.
+  Upon connecting, the client enters into a loop to take operations from the user through the command line.
+
+  Valid operations (case sensitive) are:
+    HELP: lists valid commands to the user (client only)
+    (the rest of these are sent to the server and call methods on the server as well)
+
+    UPLD: calls the method which handles uploading of files to the server's storage
+    LIST: calls the method which displays a list of files in the server's storage subdirectory
+    DWLD: calls the method which handles downloading of files from the server's storage to the client's storage
+    DELF: calls the method which handles deleting of a file from the server's storage
+    QUIT: handles the termination of the connection to the server and the closing of the client
+
+*/
+
+  public static void main(String [] args){
+    String host = "localhost";
+    int port = 42000;
+
+    boolean isTerminated = false;
+
+    try{
+
+      ClientA client = new ClientA(host, port);
+
+
+      //Stream handling
+      outToServer = socket.getOutputStream();
+      OutputStreamWriter osw = new OutputStreamWriter(outToServer);
+
+      //BufferedWriter is used to write string to the server
+      BufferedWriter bw = new BufferedWriter(osw);
+
+
+      while(true){
+
+        //Use Scanner to record user input
+
+        Scanner keyboard = new Scanner(System.in);
+
+
+        System.out.println("Enter message to send to " + host);
+        String textToServer = keyboard.nextLine();
+
+        //user input is case sensitive
+        switch(textToServer){
+          case "HELP":
+            System.out.println("Valid commands are:");
+            System.out.println("UPLD : to upload a file to the server");
+            System.out.println("LIST : to list the directories/files at the server");
+            System.out.println("DWLD : to download a file from the server");
+            System.out.println("DELF : to delete a file from the server");
+            System.out.println("QUIT : to terminate the connection and exit the client\n");
+            break;
+
+          case "UPLD":
+            bw.write(textToServer +"\n");
+            bw.flush();
+
+
+            System.out.println("Beginning procedure for uploading a file to the server...");
+
+            System.out.println("Enter path of file to be uploaded");
+            String path = keyboard.nextLine();
+            //call upload file method
+            uploadToServer(path);
+            break;
+
+          case "LIST":
+            bw.write(textToServer +"\n");
+            bw.flush();
+
+            System.out.println("Beginning procedure for listing files on the server...");
+            //call list files method
+            listFilesOnServer();
+            break;
+
+          case "DWLD":
+            bw.write(textToServer +"\n");
+            bw.flush();
+
+            System.out.println("Beginning procedure for downloading a file from the server...");
+            System.out.println("Enter the name of the file on the server that you want to download");
+            String filename = keyboard.nextLine();
+
+            //call method to download a file from the server
+            downloadFromServer(filename);
+            break;
+
+          case "DELF":
+            bw.write(textToServer +"\n");
+            bw.flush();
+
+
+            System.out.println("Beginning procedure for deleting a file from the server...");
+            System.out.println("Enter the name of the file on the server that you want to delete");
+
+            String file_name = keyboard.nextLine();
+
+            deleteFileOnServer(file_name);
+            //call delete files method
+            break;
+
+          case "QUIT":
+            bw.write(textToServer +"\n");
+            bw.flush();
+
+            socket.close();
+            isTerminated = true;
+            break;
+
+          default:
+            System.out.println("Invalid command. Type 'HELP' to see valid commands.");
+        }
+        if(isTerminated){
+          break;
+        }
+      }//innner while
+    }//try
+    catch(IOException e){
+      isTerminated = true;
+      //e.printStackTrace();
+      System.out.println("Error connecting to server. Ensure server is running and try again");
+
+    }
+
+  }//main
+
+
+
+
+
+
+/*
+            *UPLD*
+Method for uploading a File to the Server
 
 */
   public static void uploadToServer(String filePath){
@@ -126,7 +263,8 @@ public class ClientA{
         //Client sends the size of the file, which maay be a 32 bit value sent in bytes
         long longFileSize = fileToBeUploaded.length();
         int intFileSize = toIntExact(longFileSize); //Will throw an ArithmeticException in case of overflow
-        System.out.println("Int filesize: "+ intFileSize);
+
+      //  System.out.println("Int filesize: "+ intFileSize);//debug
         ByteBuffer sizeBuff = ByteBuffer.allocate(4);
         sizeBuff.putInt(intFileSize);
         byte[] sizeArray = sizeBuff.array();
@@ -313,7 +451,7 @@ public class ClientA{
       ByteBuffer sizeBuff = ByteBuffer.wrap(sizeArray);
       int size = sizeBuff.getInt(0);
 
-      //System.out.println("DEBUG size of directory listing: " + size); //debug
+      //System.out.println("debug size of directory listing: " + size); //debug
 
       //Client receives the size and goes into a loop to read directory listing
       //
@@ -324,10 +462,13 @@ public class ClientA{
       //decode byte array to string using UTF-8
       String names = new String(listingArray, "UTF-8");
       names = names.trim();
-
-      //find separate filenames around the "/" character, which is in no filenames as it is not allowed by UNIX and Windows systems
-      String[] directoryListing = names.split("/");
-
+      String[] directoryListing;
+      if(names.length()==0){
+        directoryListing = new String[0];
+      }else{
+        //find separate filenames around the "/" character, which is in no filenames as it is not allowed by UNIX and Windows systems
+        directoryListing = names.split("/");
+      }
       System.out.println("\n");
       System.out.println("There are " +directoryListing.length + " files in the server's storage:");
       for(int i = 0; i<directoryListing.length; i++){
@@ -430,93 +571,5 @@ public class ClientA{
     }
   }
 
-  public static void main(String [] args){
-    String host = "localhost";
-    int port = 42000;
-
-    try{
-
-      ClientA client = new ClientA(host, port);
-
-      outToServer = socket.getOutputStream();
-
-      OutputStreamWriter osw = new OutputStreamWriter(outToServer);
-      BufferedWriter bw = new BufferedWriter(osw);
-
-      Boolean isTerminated = false;
-
-      while(true){
-
-        //Use Scanner to record user input
-
-        Scanner keyboard = new Scanner(System.in);
-        System.out.println("Enter message to send to " + host);
-        String textToServer = keyboard.nextLine();
-
-
-        bw.write(textToServer +"\n");
-        bw.flush();
-        //System.out.println(textToServer + " sent to server");
-        switch(textToServer){
-          case "HELP":
-            System.out.println("Valid commands are:");
-            System.out.println("UPLD : to upload a file to the server");
-            System.out.println("LIST : to list the directories/files at the server");
-            System.out.println("DWLD : to download a file from the server");
-            System.out.println("DELF : to delete a file from the server \n");
-            System.out.println("QUIT : to terminate the connection and exit the client");
-            break;
-
-          case "UPLD":
-            System.out.println("Beginning procedure for uploading a file to the server...");
-
-            System.out.println("Enter path of file to be uploaded");
-            String path = keyboard.nextLine();
-            //call upload file method
-            uploadToServer(path);
-            break;
-
-          case "LIST":
-            System.out.println("Beginning procedure for listing files on the server...");
-            //call list files method
-            listFilesOnServer();
-            break;
-
-          case "DWLD":
-            System.out.println("Beginning procedure for downloading a file from the server...");
-            System.out.println("Enter the name of the file on the server that you want to download");
-            String filename = keyboard.nextLine();
-
-            //call method to download a file from the server
-            downloadFromServer(filename);
-            break;
-
-          case "DELF":
-            System.out.println("Beginning procedure for deleting a file from the server...");
-            System.out.println("Enter the name of the file on the server that you want to delete");
-
-            String file_name = keyboard.nextLine();
-
-            deleteFileOnServer(file_name);
-            //call delete files method
-            break;
-
-          case "QUIT":
-            socket.close();
-            isTerminated = true;
-            break;
-
-          default:
-            System.out.println("Invalid command. Type 'HELP' to see valid commands.");
-        }
-        if(isTerminated){
-          break;
-        }
-      }//innner while
-    }//try
-    catch(IOException e){
-      e.printStackTrace();
-    }
-  }
 
 }
