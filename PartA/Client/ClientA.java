@@ -20,7 +20,6 @@ import java.nio.ByteBuffer;
 import java.net.*;
 import java.util.Scanner;
 import java.lang.*;
-import static java.lang.Math.toIntExact;
 
 public class ClientA{
 
@@ -82,7 +81,7 @@ public class ClientA{
         Scanner keyboard = new Scanner(System.in);
 
 
-        System.out.println("Enter a command);
+        System.out.println("Enter a command");
         String textToServer = keyboard.nextLine();
 
         //user input is case sensitive
@@ -262,7 +261,7 @@ Method for uploading a File to the Server
 
         //Client sends the size of the file, which maay be a 32 bit value sent in bytes
         long longFileSize = fileToBeUploaded.length();
-        int intFileSize = toIntExact(longFileSize); //Will throw an ArithmeticException in case of overflow
+        int intFileSize = (int) (long) longFileSize;
 
       //  System.out.println("Int filesize: "+ intFileSize);//debug
         ByteBuffer sizeBuff = ByteBuffer.allocate(4);

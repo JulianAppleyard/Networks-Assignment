@@ -6,11 +6,11 @@ import partb.servers.serverb2.ServerB2Interface;
 
 //import ServerA stuff
 import java.util.*;
+import java.util.concurrent.*;
 import java.io.*;
 import java.nio.file.*;
 import java.net.*;
 import java.nio.ByteBuffer;
-import static java.lang.Math.toIntExact;
 
 //Import java rmi stuff
 import java.rmi.registry.Registry;
@@ -26,12 +26,16 @@ public class ServerB2 implements ServerB2Interface{
   //constructor
   public ServerB2(){}
 
+  public static boolean uploadCheck;
+  public static int frontPort;
+
   public static void main(String args[]){
     try{
 
 
       String host = "localhost";
       int port = 42000;
+      int frontPort = 42002;
       //Create server object
       ServerB2 obj = new ServerB2();
 
@@ -46,22 +50,113 @@ public class ServerB2 implements ServerB2Interface{
 
       //Write ready message to console
       System.err.println("FTPB2 server ready");
+
+      while(true){
+        TimeUnit.SECONDS.sleep(1);
+        if(uploadCheck){
+          ServerSocket serverSocket = new ServerSocket(frontPort);
+          if(uploadCheck){
+            uploadFromClient(serverSocket);
+            uploadCheck = false;
+            serverSocket.close();
+          }
+
+        }
+
+
+      }
+
     } catch(Exception e){
       e.printStackTrace();
       System.out.println("FTB2 startup failed");
     }
   }//main
 
-  /*
+  /**
               *UPLOAD*
     This method is called when the client sends the UPLD command.
     It handles the process of uploading a file from the client's system to the server's "Storage" directory
 
-  */
 
-  public void uploadFromClient() throws SocketException, IOException{
+  **/
+  public void startUploadSocket(){
+    uploadCheck = true;
 
 
+  }
+
+  public static void uploadFromClient(ServerSocket serverSocket) throws SocketException, IOException{
+    try{
+      System.out.println("Uploading to ServerB2");
+      Socket frontSocket = serverSocket.accept();
+      InputStream frontInputStream = frontSocket.getInputStream();
+      DataInputStream frontDataIn = new DataInputStream(frontInputStream);
+
+      //first the frontend sends the length of the file name and the filename itself
+      byte[] lengthName = new byte[1024];
+
+      frontDataIn.read(lengthName);
+
+      ByteBuffer buffer = ByteBuffer.wrap(lengthName);
+      //decode length
+      short lengthShort = buffer.getShort(0); //takes first two bytes
+
+      //the rest of the string is the filename
+      byte[] temp = new byte[buffer.remaining()];
+      buffer.get(temp);
+
+      String file_name = new String(temp, "UTF-8");
+      file_name = file_name.trim();
+
+      //send acknowledgement?
+
+
+      //next set of data is the file filesize
+
+      byte[] sizeArray = new byte[5];
+      frontDataIn.read(sizeArray);
+      ByteBuffer sizeBuff = ByteBuffer.wrap(sizeArray);
+      int fileSize = sizeBuff.getInt(0);
+
+
+      Path currentRelativePath = Paths.get("");
+      String stringPath = currentRelativePath.toAbsolutePath().toString();
+      File newFile = new File(stringPath + "\\partb\\servers\\serverb2\\Storage\\" + file_name);
+
+
+
+      newFile.createNewFile();
+
+      FileOutputStream fileOutputWriter = new FileOutputStream(newFile);
+
+      //next set of data is the file itself
+
+      /*
+      The below for loop will iterate once for every kB
+      There is one extra in case filesize is less than 1024 (in which case int division will give 0)
+      The extra one also covers remaining bytes left over because of integer division
+      */
+
+      int numOfIterations = (fileSize/1024)+1;
+
+      for(int i=0; i<numOfIterations; i++){
+        if(i == numOfIterations-1){
+          int remaining = fileSize%1024;
+          byte[] fileBytes = new byte[remaining];
+          frontDataIn.readFully(fileBytes, 0, remaining);
+          fileOutputWriter.write(fileBytes, 0, remaining);
+        }else{
+          byte[] fileBytes = new byte[1024];
+          frontDataIn.read(fileBytes, 0, 1024);
+          fileOutputWriter.write(fileBytes, 0, 1024);
+        }
+      }
+      System.out.println("File written to ServerB2's storage");
+      uploadCheck = false;
+      frontSocket.close();
+    }catch(Exception e){
+      e.printStackTrace();
+    }
   }//UPLD
 
 
@@ -76,7 +171,6 @@ public class ServerB2 implements ServerB2Interface{
       //Stream management
       System.out.println("Listing files on ServerB2");
 
-      System.out.println("Client requested list");
       ByteArrayOutputStream baos = new ByteArrayOutputStream();
 
       //Client sends operation (LIST) to list directories/files at the server
@@ -149,15 +243,22 @@ public class ServerB2 implements ServerB2Interface{
 
 
   public void deleteFileOnServer(String file_name) throws SocketException, IOException {
-    //construct a path to where the file is
-    Path currentRelativePath = Paths.get("");
-    String stringPath = currentRelativePath.toAbsolutePath().toString();
-    stringPath = stringPath + "\\partb\\servers\\serverb2\\Storage\\" + file_name;
+    try{
+      //construct a path to where the file is
+      Path currentRelativePath = Paths.get("");
+      String stringPath = currentRelativePath.toAbsolutePath().toString();
+      stringPath = stringPath + "\\partb\\servers\\serverb2\\Storage\\" + file_name;
 
-    File fileObject = new File(stringPath);
+      File fileObject = new File(stringPath);
 
-    Boolean isSuccees = fileObject.delete();
-
+      Boolean isSuccess = fileObject.delete();
+      while(!isSuccess){
+        TimeUnit.MILLISECONDS.sleep(50);
+        isSuccess = fileObject.delete();
+      }
+    }catch(InterruptedException e){
+      e.printStackTrace();
+    }
   }//DELF
 
 }//class

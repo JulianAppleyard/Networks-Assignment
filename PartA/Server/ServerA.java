@@ -11,7 +11,6 @@ import java.io.*;
 import java.nio.file.*;
 import java.net.*;
 import java.nio.ByteBuffer;
-import static java.lang.Math.toIntExact;
 
 public class ServerA {
 
@@ -202,8 +201,6 @@ public class ServerA {
       int fileSize = sizeBuff.getInt(0); //what do I do with this?
 
 
-      //ok so if the file is too big it will fuck everything up
-      //System.out.println("filesize: " + fileSize);//debug
 
       Path currentRelativePath = Paths.get("");
       String stringPath = currentRelativePath.toAbsolutePath().toString();
@@ -395,7 +392,7 @@ just an outline for now
     if(fileExists){
       //if the file does exist, server returns the size of the file to the client as a 32-bit int
       long fileSizeLong = f.length();
-      int fileSizeInt = toIntExact(fileSizeLong);
+      int fileSizeInt = (int) (long) fileSizeLong;
 
       ByteBuffer outBuffer = ByteBuffer.allocate(4);
       outBuffer.putInt(fileSizeInt);
@@ -520,7 +517,7 @@ just an outline for now
             ack = "File deleted successfully";
           }
           else{
-            ack = "Deletion failed";
+            ack = "Deletion failed. Restarting the server usually fixes this problem.";
           }
           //send ack to client
           byte[] ackBytes = ack.getBytes("UTF-8");

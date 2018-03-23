@@ -7,7 +7,7 @@ import java.io.*;
 import java.net.*;
 
 public interface MainInterface extends Remote {
-  void uploadFromClient() throws SocketException, IOException, RemoteException;
+  void startUpload() throws RemoteException;
   String[] getMasterListing() throws SocketException, IOException, RemoteException;
   void downloadToClient() throws SocketException, IOException, RemoteException;
   void deleteFileOnServer(String file_name) throws SocketException, IOException, RemoteException;

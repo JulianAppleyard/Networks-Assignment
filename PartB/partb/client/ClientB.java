@@ -10,12 +10,14 @@ import java.nio.file.*;
 import java.nio.ByteBuffer;
 import java.net.*;
 import java.util.Scanner;
+import java.util.concurrent.*;
 import java.lang.*;
-import static java.lang.Math.toIntExact;
 
 //import rmi dependencies
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
+
+
 
 public class ClientB{
 
@@ -24,17 +26,29 @@ public class ClientB{
   }//constructor
 
 
+
+  public static MainInterface stub;
+  public static String host;
+  //for socket connections
+  public static int frontPort;
+
+
 /*
             *MAIN METHOD*
 
 */
 
-  public static MainInterface stub;
-  public static void main(String [] args){
-    String host = "localhost";
-    int port = 42000;
 
+
+
+
+
+  public static void main(String [] args){
+    host = "localhost";
+    int port = 42000;
+    frontPort = 39000;
     boolean isTerminated = false;
+
     try{
       //Get registry
       Registry registry = LocateRegistry.getRegistry(host, port);
@@ -72,7 +86,6 @@ public class ClientB{
             System.out.println("Enter path of file to be uploaded");
             String path = keyboard.nextLine();
             //call upload file method
-            stub.uploadFromClient();
             uploadToServer(path);
             break;
 
@@ -126,7 +139,7 @@ public class ClientB{
     }catch(IOException e){
       isTerminated = true;
       System.out.println("Error connecting to server. Ensure server is running and try again");
-      //e.printStackTrace();
+      e.printStackTrace();
     }catch(Exception e){
       e.printStackTrace();
     }
@@ -134,10 +147,187 @@ public class ClientB{
   }//MAIN
 
 
-/*
+/**
             *UPLD*
-*/
-  public static void uploadToServer(String path){
+**/
+  public static void uploadToServer(String filePath) throws InterruptedException, SocketException, IOException{
+
+    Path p = Paths.get(filePath);
+    String file_name = p.getFileName().toString();
+
+    File fileToBeUploaded = p.toFile();
+    long fileSize = fileToBeUploaded.length();
+    int intFileSize = (int) (long) fileSize;
+
+
+
+
+    //the file must exist on the clientside to proceed
+    boolean exists = fileToBeUploaded.exists();
+
+
+    //the file must be not a directory
+    if(fileToBeUploaded.isDirectory()){
+      exists = false;
+    }
+
+    if(!exists){
+      System.out.println("File does not exist");
+      //if it doesn't exist, exit to main menu without calling frontend
+
+    }else{
+      //otherwise, continue with the process
+      //tell the frontend to get ready
+      stub.startUpload();
+
+
+
+      String[] masterListing = stub.getMasterListing();
+
+      //this regex should find the last period (.) in the filename. Should be the one right before the extension
+      String regex = "\\.(?=[^\\.]*$)";
+
+      String[] splitArray = file_name.split(regex);
+
+      //test to see if the filename exists in the listing already
+      //if it does, increment j by one and insert j within parentheses before the file extension
+      //eg SmallFile.txt becomes SmallFile(1).txt
+      int j = 0;
+
+      for(int i=0; i <masterListing.length; i++){
+        if(file_name.equals(masterListing[i])){
+          j++;
+          file_name = splitArray[0] + "("+ j +")"+"."+splitArray[1];
+          i=-1;
+        }
+      }
+
+
+
+
+
+
+
+
+      Scanner input = new Scanner(System.in);
+      boolean reliabilityFlag = false;
+
+      //see if the user wants a high-reliability upload
+      while(true){
+        System.out.println("Make this a high-reliability upload? Type 'yes' or 'no' to specify.");
+
+
+        String response = input.nextLine();
+
+
+        if(response.equalsIgnoreCase("yes")){
+          reliabilityFlag = true;
+          break;
+        }else if(response.equalsIgnoreCase("no")){
+          reliabilityFlag = false;
+          break;
+        }else{
+          System.out.println("Invalid response. Type 'yes' to specify high-reliability upload or 'no' to opt-out");
+          //only break the loop if they use a valid response
+        }
+      }//while
+
+      //connect to frontend
+      Socket socket = new Socket(host, frontPort);
+      OutputStream oStream = socket.getOutputStream();
+      DataOutputStream dataOut = new DataOutputStream(oStream);
+
+      //send reliability first
+      ByteBuffer reliableBuffer = ByteBuffer.allocate(4);
+      if(reliabilityFlag){
+        reliableBuffer.putInt(1);
+      }else{
+        reliableBuffer.putInt(-1);
+      }
+      byte[] reliableArray = reliableBuffer.array();
+
+      dataOut.write(reliableArray, 0, reliableArray.length);
+
+
+      //start timing
+      double startTime = System.currentTimeMillis();
+
+
+
+      //next array of data is the length of filename and the filename
+      int fileNameLength = file_name.length();
+      short fileNameShortLength = (short) fileNameLength;
+
+
+      ByteBuffer nameLengthBuffer = ByteBuffer.allocate(2);
+      nameLengthBuffer.putShort(fileNameShortLength);
+      byte[] lengthArray = nameLengthBuffer.array();
+
+      byte[] nameArray = file_name.getBytes("UTF-8");
+
+      //concatenate the two arrays
+      ByteArrayOutputStream baos = new ByteArrayOutputStream();
+      baos.write(lengthArray);
+      baos.write(nameArray);
+      byte[] outArray = baos.toByteArray();
+
+      //send off the concatenated byte array
+      TimeUnit.SECONDS.sleep(1);
+
+      dataOut.write(outArray, 0, outArray.length);
+      TimeUnit.SECONDS.sleep(1);
+
+
+      //ack?
+
+     //next array of data is the size of the file in 32 bit int
+
+
+
+     ByteBuffer sizeBuff = ByteBuffer.allocate(4);
+     sizeBuff.putInt(intFileSize);
+     byte[] sizeArray = sizeBuff.array();
+
+     dataOut.write(sizeArray, 0, sizeArray.length);
+
+      /*
+        Start the upload of the file itself
+      */
+      FileInputStream fileStream = new FileInputStream(fileToBeUploaded);
+
+
+      //the below for loop will iterate once for every kB
+      //it reads and sends the file in bytes 1024 bytes at a time
+      // one extra in case filesize is less than 1024 (in which case int division will give 0)
+      //the extra one also covers remaining bytes left over because of integer division
+      System.out.println("Uploading...");
+      int numOfIterations = (intFileSize/1024)+1;
+
+
+      for(int i=0; i<numOfIterations; i++){
+          int remaining = fileStream.available();
+          if(remaining >= 1024){
+            byte[] fileBytes = new byte[1024];
+            fileStream.read(fileBytes, 0, 1024);
+            dataOut.write(fileBytes, 0, 1024);
+          }
+          //if there is less than 1024 bytes left, make the bytearray that size instead of 1024
+          else{
+            byte[] fileBytes = new byte[remaining];
+            fileStream.read(fileBytes, 0, remaining);
+            dataOut.write(fileBytes, 0, remaining);
+          }
+
+        }
+
+      double uploadTime = System.currentTimeMillis() - startTime;
+      double uploadTimeSeconds = uploadTime /1000.00;
+      System.out.println(fileSize + " bytes uploaded in " + uploadTimeSeconds + " seconds");
+
+
+    }//exists else
+
+  //exit to main menu
 
   }//UPLD
 
@@ -199,7 +389,7 @@ public class ClientB{
 
   /*
               *DELF
-    .
+    Takes as input the list of strings generated by stub.getMasterListing() and the filename
 
   */
 
